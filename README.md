@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
 
 ## Getting Started
@@ -34,3 +35,7 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+=======
+# Privacy-Preserving-Health-Data-Exchange-Using-Secure-MPC
+This project implements a secure and privacy-preserving framework for exchanging sensitive health data between multiple parties using Secure Multi-Party Computation (MPC). It enables collaborative data analysis without exposing raw patient information, ensuring compliance with privacy regulations like HIPAA and GDPR.
+>>>>>>> d62c109540ac2e485c43a25a1745f0a412e3b668
