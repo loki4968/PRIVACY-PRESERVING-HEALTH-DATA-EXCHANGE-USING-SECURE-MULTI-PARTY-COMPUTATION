@@ -1,0 +1,6 @@
+Patient ID,Test Date,Blood Sugar Level (mg/dL),Blood Pressure (mmHg),Heart Rate (bpm),Temperature (°F),Notes
+P12345,2024-03-15,95,120/80,72,98.6,Regular checkup
+P12346,2024-03-15,105,118/75,68,98.4,Follow-up visit
+P12347,2024-03-15,88,125/82,75,98.7,Annual physical
+P12348,2024-03-15,92,115/75,70,98.5,Routine check
+P12349,2024-03-15,98,122/78,73,98.8,Regular monitoring
