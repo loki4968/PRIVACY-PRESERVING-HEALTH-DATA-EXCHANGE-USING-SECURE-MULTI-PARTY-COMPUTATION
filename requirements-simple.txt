@@ -1,0 +1,16 @@
+# Simplified requirements that work without compilation issues
+fastapi==0.104.1
+uvicorn==0.24.0
+python-multipart==0.0.6
+sqlalchemy==2.0.23
+pydantic==2.5.2
+python-dotenv==1.0.0
+
+# Use older versions that have pre-compiled wheels
+numpy==1.24.4
+cryptography==3.4.8
+
+# Optional ML packages (install separately if needed)
+# scikit-learn==1.3.0
+# pandas==2.0.3
+# scipy==1.11.1

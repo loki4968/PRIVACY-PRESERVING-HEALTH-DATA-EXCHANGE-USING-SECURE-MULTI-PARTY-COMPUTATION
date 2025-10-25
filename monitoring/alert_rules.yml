@@ -1,0 +1,125 @@
+groups:
+  - name: health_data_exchange_alerts
+    rules:
+      # Application Health Alerts
+      - alert: HealthBackendDown
+        expr: up{job="health-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Health Data Exchange Backend is down"
+          description: "The Health Data Exchange backend service has been down for more than 1 minute."
+
+      - alert: HealthFrontendDown
+        expr: up{job="health-frontend"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Health Data Exchange Frontend is down"
+          description: "The Health Data Exchange frontend service has been down for more than 2 minutes."
+
+      # Database Alerts
+      - alert: PostgreSQLDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL database is down"
+          description: "PostgreSQL database has been down for more than 1 minute."
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis cache is down"
+          description: "Redis cache service has been down for more than 1 minute."
+
+      # Performance Alerts
+      - alert: HighResponseTime
+        expr: http_request_duration_seconds{quantile="0.95"} > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is above 2 seconds for {{ $labels.job }}."
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is above 10% for {{ $labels.job }}."
+
+      # Resource Usage Alerts
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage"
+          description: "CPU usage is above 80% on {{ $labels.instance }}."
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage"
+          description: "Memory usage is above 85% on {{ $labels.instance }}."
+
+      - alert: DiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes / node_filesystem_size_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Low disk space"
+          description: "Disk usage is above 90% on {{ $labels.instance }}."
+
+      # Security Alerts
+      - alert: TooManyFailedLogins
+        expr: rate(http_requests_total{endpoint="/login", status="401"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High number of failed login attempts"
+          description: "More than 6 failed login attempts per minute detected."
+
+      - alert: UnauthorizedAccess
+        expr: rate(http_requests_total{status="403"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unauthorized access attempts"
+          description: "High rate of 403 Forbidden responses detected."
+
+      # SMPC Specific Alerts
+      - alert: SMPCComputationFailed
+        expr: rate(smpc_computation_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "SMPC computation failures detected"
+          description: "SMPC computations are failing at a rate of {{ $value }} per second."
+
+      - alert: SMPCHighLatency
+        expr: smpc_computation_duration_seconds{quantile="0.95"} > 30
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High SMPC computation latency"
+          description: "95th percentile SMPC computation time is above 30 seconds."

@@ -59,9 +59,10 @@ export const hasPermission = (userPermissions, requiredPermission) => {
 };
 
 export const hasRole = (userRole, requiredRole) => {
-  return userRole === requiredRole;
+  if (!userRole || !requiredRole) return false;
+  return userRole.toLowerCase() === requiredRole.toLowerCase();
 };
 
 export const getPermissionsForRole = (role) => {
   return ROLE_PERMISSIONS[role] || [];
-}; 
+};

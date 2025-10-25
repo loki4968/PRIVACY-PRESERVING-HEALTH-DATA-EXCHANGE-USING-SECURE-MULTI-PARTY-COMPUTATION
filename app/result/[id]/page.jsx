@@ -17,6 +17,7 @@ import {
 import { useAuth } from "../../context/AuthContext";
 import { toast } from "sonner";
 import { formatDateTime, formatDate, analyzeHealthMetrics } from "../../utils/formatters";
+import { API_ENDPOINTS } from "../../config/api";
 import { AlertTriangle, AlertCircle, CheckCircle, TrendingUp, TrendingDown, Activity, Heart, Thermometer, Droplet, Activity as Pulse } from "lucide-react";
 import HealthMetricsDashboard from '../../components/HealthMetricsDashboard';
 
@@ -63,7 +64,7 @@ export default function ResultPage() {
         console.log("Fetching result for ID:", id);
         console.log("Using token:", token.substring(0, 10) + "...");
         
-        const response = await fetch(`http://localhost:8000/uploads/${id}`, {
+        const response = await fetch(API_ENDPOINTS.uploadById(id), {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -488,6 +489,43 @@ export default function ResultPage() {
         </div>
       );
     }
+    
+    // Handle case where analysis contains only _info field (no analyzable metrics found)
+    if (result?.result?.analysis?._info) {
+      return (
+        <div className="bg-yellow-50 p-4 rounded-lg">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <AlertTriangle className="h-5 w-5 text-yellow-400" />
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-yellow-800">{result.result.analysis._info.message}</h3>
+              <p className="mt-2 text-sm text-yellow-700">{result.result.analysis._info.recommendation}</p>
+              {result.result.analysis._info.available_columns && (
+                <div className="mt-2">
+                  <p className="text-sm font-medium text-yellow-800">Available Columns:</p>
+                  <ul className="list-disc pl-5 text-sm text-yellow-700">
+                    {result.result.analysis._info.available_columns.map((col, index) => (
+                      <li key={index}>{col}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {result.result.analysis._info.expected_columns && (
+                <div className="mt-2">
+                  <p className="text-sm font-medium text-yellow-800">Expected Columns:</p>
+                  <ul className="list-disc pl-5 text-sm text-yellow-700">
+                    {result.result.analysis._info.expected_columns.map((col, index) => (
+                      <li key={index}>{col}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="space-y-8">
@@ -495,9 +533,11 @@ export default function ResultPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Blood Test Analysis Summary</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {Object.entries(result.result.analysis).map(([metric, data]) => {
-              const metricInfo = getBloodTestMetricInfo(metric);
-              const status = metricInfo.getStatus(metric, data.average);
+            {Object.entries(result.result.analysis)
+              .filter(([metric]) => metric !== '_info') // Filter out the _info field
+              .map(([metric, data]) => {
+                const metricInfo = getBloodTestMetricInfo(metric);
+                const status = metricInfo.getStatus(metric, data.average);
               
               return (
                 <div key={metric} className="bg-white rounded-lg p-4 border">
@@ -540,9 +580,11 @@ export default function ResultPage() {
         <div className="bg-white rounded-lg shadow p-6">
           <h3 className="text-lg font-semibold mb-4">Detailed Analysis</h3>
           <div className="space-y-6">
-            {Object.entries(result.result.analysis).map(([metric, data]) => {
-              const metricInfo = getBloodTestMetricInfo(metric);
-              const status = metricInfo.getStatus(metric, data.average);
+            {Object.entries(result.result.analysis)
+              .filter(([metric]) => metric !== '_info') // Filter out the _info field
+              .map(([metric, data]) => {
+                const metricInfo = getBloodTestMetricInfo(metric);
+                const status = metricInfo.getStatus(metric, data.average);
               
               return (
                 <div key={metric} className="border-b pb-6 last:border-b-0">

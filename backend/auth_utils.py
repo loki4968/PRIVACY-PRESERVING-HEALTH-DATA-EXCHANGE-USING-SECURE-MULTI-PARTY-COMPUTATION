@@ -4,12 +4,21 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 import jwt
 from enum import Enum
+from config import Settings
+
+# Get settings from config
+settings = Settings()
 
 # Secret key for JWT
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")  # In production, use a secure secret key
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-REFRESH_TOKEN_EXPIRE_DAYS = 7
+SECRET_KEY = settings.SECRET_KEY
+ALGORITHM = settings.ALGORITHM
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+REFRESH_TOKEN_EXPIRE_DAYS = settings.REFRESH_TOKEN_EXPIRE_DAYS
+
+print(f"Using SECRET_KEY: {SECRET_KEY[:5]}...")
+print(f"Using ALGORITHM: {ALGORITHM}")
+print(f"Using ACCESS_TOKEN_EXPIRE_MINUTES: {ACCESS_TOKEN_EXPIRE_MINUTES}")
+print(f"Using REFRESH_TOKEN_EXPIRE_DAYS: {REFRESH_TOKEN_EXPIRE_DAYS}")
 
 class UserRole(str, Enum):
     ADMIN = "admin"
@@ -26,6 +35,7 @@ class Permission(str, Enum):
     MANAGE_USERS = "manage_users"
     PRESCRIBE_MEDICATION = "prescribe_medication"
     VIEW_ANALYTICS = "view_analytics"
+    SECURE_COMPUTATIONS = "secure_computations"
 
 # Role-based permissions mapping
 ROLE_PERMISSIONS: Dict[UserRole, List[Permission]] = {
@@ -35,7 +45,8 @@ ROLE_PERMISSIONS: Dict[UserRole, List[Permission]] = {
         Permission.WRITE_PATIENT_DATA,
         Permission.READ_LAB_RESULTS,
         Permission.PRESCRIBE_MEDICATION,
-        Permission.VIEW_ANALYTICS
+        Permission.VIEW_ANALYTICS,
+        Permission.SECURE_COMPUTATIONS
     ],
     UserRole.PATIENT: [
         Permission.READ_PATIENT_DATA,
@@ -90,6 +101,15 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     else:
         expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
+    # Add permissions to token if role is present but permissions are not
+    if "role" in data and "permissions" not in data:
+        try:
+            user_role = UserRole(data["role"])
+            to_encode["permissions"] = get_user_permissions(user_role)
+        except ValueError:
+            # If role is not a valid UserRole enum value
+            pass
+    
     to_encode.update({
         "exp": expire,
         "iat": datetime.utcnow(),
@@ -113,13 +133,41 @@ def create_refresh_token(data: dict) -> str:
 def decode_access_token(token: str) -> Optional[dict]:
     """Decode and verify a JWT access token with enhanced validation."""
     try:
+        print(f"Decoding token: {token[:20]}...")
+        # First try to decode without verification to inspect the token
+        try:
+            unverified_payload = jwt.decode(token, options={"verify_signature": False})
+            print(f"Unverified payload: {unverified_payload}")
+        except Exception as e:
+            print(f"Error decoding unverified token: {e}")
+            
+        # Now decode with verification
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        print(f"Verified payload: {payload}")
+        
         if datetime.fromtimestamp(payload["exp"]) < datetime.utcnow():
+            print("Token expired")
             return None
-        if payload.get("type") != "access":
+            
+        if payload.get("type") != "access" and "type" in payload:
+            print(f"Invalid token type: {payload.get('type')}")
             return None
+            
+        # If role is in the payload but permissions are not, add them
+        if "role" in payload and "permissions" not in payload:
+            role = payload["role"]
+            try:
+                user_role = UserRole(role)
+                payload["permissions"] = get_user_permissions(user_role)
+                print(f"Added permissions for role {role}: {payload['permissions']}")
+            except ValueError as e:
+                print(f"Invalid role value: {role}, error: {e}")
+                # If role is not a valid UserRole enum value
+                pass
+                
         return payload
-    except jwt.PyJWTError:
+    except jwt.PyJWTError as e:
+        print(f"JWT decode error: {e}")
         return None
 
 def check_permission(user_role: UserRole, required_permission: Permission) -> bool:

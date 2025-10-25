@@ -1,16 +1,42 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, LargeBinary, Enum, Boolean, create_engine
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, JSON, LargeBinary, Enum, Boolean, create_engine, event, Date
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
-from datetime import datetime
-from backend.encryption_utils import EncryptionManager, validate_health_data, sanitize_health_data
-from backend.auth_utils import UserRole
-from backend.config import DATABASE_URL, DATABASE_CONNECT_ARGS
+from datetime import datetime, date
+from encryption_utils import EncryptionManager, validate_health_data, sanitize_health_data
+from auth_utils import UserRole
+from config import DATABASE_URL, DATABASE_CONNECT_ARGS
 import enum
 import json
 import os
+import uuid
 
 # Database setup
-engine = create_engine(DATABASE_URL, connect_args=DATABASE_CONNECT_ARGS)
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(
+        DATABASE_URL,
+        connect_args=DATABASE_CONNECT_ARGS,
+        pool_pre_ping=True,
+    )
+else:
+    # For PostgreSQL and other databases, don't pass connect_args as they contain pool parameters
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+    )
+
+# SQLite pragmas to reduce locking and improve concurrency
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    try:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL;")
+        cursor.execute("PRAGMA synchronous=NORMAL;")
+        cursor.execute("PRAGMA foreign_keys=ON;")
+        cursor.execute("PRAGMA busy_timeout=5000;")
+        cursor.close()
+    except Exception:
+        # If not SQLite or pragma fails, ignore
+        pass
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -144,16 +170,34 @@ class SecureHealthRecord(Base):
         return encryption_manager.decrypt(self.encrypted_value)
 
     def set_data(self, data: dict):
-        """Set and encrypt the health record data"""
-        # Validate the data
+        """Set and encrypt the health record data with enhanced validation"""
+        # Validate the data structure
         if not validate_health_data(data):
             raise ValueError("Invalid health data format")
+        
+        # Additional validation for health records
+        if not isinstance(data.get("patient_id"), str) or len(data["patient_id"]) < 3:
+            raise ValueError("Patient ID must be at least 3 characters long")
+        
+        # Validate data type is appropriate for health records
+        valid_health_types = [
+            "blood_pressure", "heart_rate", "temperature", "weight", 
+            "height", "glucose_level", "medication", "diagnosis",
+            "lab_result", "vital_signs", "medical_history", "allergy",
+            "vaccination", "procedure", "imaging", "consultation"
+        ]
+        
+        if data.get("data_type") not in valid_health_types:
+            print(f"Warning: Unusual health data type: {data.get('data_type')}")
         
         # Sanitize the data
         sanitized_data = sanitize_health_data(data)
         
+        # Add validation timestamp
+        sanitized_data["validated_at"] = datetime.utcnow().isoformat()
+        
         # Convert to string for encryption
-        data_str = json.dumps(sanitized_data)
+        data_str = json.dumps(sanitized_data, sort_keys=True)
         
         # Encrypt the data
         self.encrypt_value(data_str)
@@ -179,10 +223,13 @@ class SecureComputation(Base):
     computation_id = Column(String, unique=True, nullable=False)
     org_id = Column(Integer, nullable=False)
     type = Column(String, nullable=False)
+    security_method = Column(String, default="homomorphic")  # standard, homomorphic, hybrid
     status = Column(String, nullable=False)
     result = Column(JSON)
     error_message = Column(String)
+    error_code = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     completed_at = Column(DateTime)
 
     participants = relationship("ComputationParticipant", back_populates="computation")
@@ -198,6 +245,21 @@ class ComputationParticipant(Base):
 
     computation = relationship("SecureComputation", back_populates="participants")
 
+class ComputationInvitation(Base):
+    __tablename__ = 'computation_invitations'
+
+    id = Column(Integer, primary_key=True)
+    computation_id = Column(String, ForeignKey('secure_computations.computation_id'), nullable=False)
+    invited_org_id = Column(Integer, ForeignKey('organizations.id'), nullable=False)
+    inviter_org_id = Column(Integer, ForeignKey('organizations.id'), nullable=False)
+    status = Column(String, default='pending', nullable=False)  # pending, accepted, declined
+    invited_at = Column(DateTime, default=datetime.utcnow)
+    responded_at = Column(DateTime)
+
+    computation = relationship("SecureComputation")
+    invited_org = relationship("Organization", foreign_keys=[invited_org_id])
+    inviter_org = relationship("Organization", foreign_keys=[inviter_org_id])
+
 class ComputationResult(Base):
     __tablename__ = 'computation_results'
 
@@ -205,6 +267,7 @@ class ComputationResult(Base):
     computation_id = Column(String, ForeignKey('secure_computations.computation_id'), nullable=False)
     org_id = Column(Integer, nullable=False)
     data_points = Column(JSON, nullable=False)
+    encryption_type = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     computation = relationship("SecureComputation", back_populates="results")
@@ -235,4 +298,40 @@ class SecureComputationResult(Base):
         """Decrypt and retrieve computation result."""
         if not self.encrypted_result:
             return None
-        return self.encryption_manager.decrypt_data(self.encrypted_result) 
+        return self.encryption_manager.decrypt_data(self.encrypted_result)
+
+
+class ReportRequestStatus(enum.Enum):
+    """Status of a report request."""
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class ReportRequest(Base):
+    """Model for patient report requests."""
+    __tablename__ = "report_requests"
+    
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    patient_id = Column(Integer, ForeignKey("organizations.id"))
+    organization_id = Column(Integer, ForeignKey("organizations.id"))
+    visit_date = Column(Date, nullable=False)
+    description = Column(String, nullable=True)
+    status = Column(Enum(ReportRequestStatus), default=ReportRequestStatus.PENDING)
+    request_date = Column(DateTime, default=datetime.utcnow)
+    response_date = Column(DateTime, nullable=True)
+    rejection_reason = Column(String, nullable=True)
+    report_file_path = Column(String, nullable=True)
+    secret_code = Column(String(8), nullable=True, index=True)
+    
+    # Relationships
+    patient = relationship("Organization", foreign_keys=[patient_id])
+    organization = relationship("Organization", foreign_keys=[organization_id])
+    
+    def generate_secret_code(self):
+        """Generate a random 8-character alphanumeric secret code."""
+        import random
+        import string
+        chars = string.ascii_uppercase + string.digits
+        self.secret_code = ''.join(random.choice(chars) for _ in range(8))
+        return self.secret_code

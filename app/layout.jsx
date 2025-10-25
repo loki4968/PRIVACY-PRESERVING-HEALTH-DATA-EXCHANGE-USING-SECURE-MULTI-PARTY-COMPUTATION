@@ -1,5 +1,6 @@
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './context/AuthContext';
+import NavigationSecurity from './components/NavigationSecurity';
 import './globals.css';
 
 export const metadata = {
@@ -18,6 +19,7 @@ export default function RootLayout({ children }) {
             </head>
             <body className="font-inter">
                 <AuthProvider>
+                    <NavigationSecurity />
                     {children}
                     <Toaster
                         position="top-center"

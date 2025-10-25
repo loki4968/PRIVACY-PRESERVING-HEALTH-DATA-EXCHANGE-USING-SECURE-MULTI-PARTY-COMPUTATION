@@ -6,6 +6,8 @@ import RoleProtectedRoute from "../components/RoleProtectedRoute";
 import { PERMISSIONS } from "../config/roles";
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from "framer-motion";
+import { API_ENDPOINTS, fetchApi } from "../config/api";
+import PatientDashboard from "../components/PatientDashboard";
 import {
   Upload,
   LogOut,
@@ -54,6 +56,7 @@ export default function DashboardPage() {
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
+  const [secureComputations, setSecureComputations] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const { user, logout } = useAuth();
   const router = useRouter();
@@ -69,11 +72,17 @@ export default function DashboardPage() {
       if (!token) {
         console.error("No authentication token found");
         toast.error("Please log in again");
-        router.push('/login');
+        router.replace('/login');
+        return;
+      }
+      
+      // Check if user is a patient and redirect to reports page if requested in URL params
+      if (user?.role === 'patient' && searchParams.get('view') === 'reports') {
+        router.push('/reports');
         return;
       }
 
-      const response = await fetch("http://localhost:8000/uploads", {
+      const response = await fetch(API_ENDPOINTS.uploads, {
         headers: {
           "Authorization": `Bearer ${token}`,
           "Content-Type": "application/json"
@@ -89,7 +98,7 @@ export default function DashboardPage() {
         console.error("Failed to fetch records:", response.status, data);
         if (response.status === 401) {
           toast.error("Session expired. Please log in again");
-          router.push('/login');
+          router.replace('/login');
         } else {
           toast.error(data.detail || "Failed to load records");
         }
@@ -114,16 +123,52 @@ export default function DashboardPage() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showAccountMenu]);
 
+  const fetchSecureComputations = async () => {
+    // Skip secure computation API calls for patient users
+    if (user?.role === 'patient') {
+      console.log("Skipping secure computations fetch for patient user");
+      return;
+    }
+
+    try {
+      const token = user?.token || localStorage.getItem('token');
+      
+      if (!token) {
+        console.error("No authentication token found");
+        return;
+      }
+
+      // Use fetchApi utility instead of direct fetch to handle errors properly
+      const data = await fetchApi(API_ENDPOINTS.secureComputations, {
+        method: 'GET',
+        token
+      });
+      
+      console.log("Fetched secure computations:", data);
+      setSecureComputations(data);
+      setError(null); // Clear any previous errors
+    } catch (error) {
+      console.error("Error fetching secure computations:", error);
+      // Display error message to user
+      setError(`Error fetching secure computations: ${error.message}`);
+      toast.error(`Error fetching secure computations: ${error.message}`);
+    }
+  };
+
   useEffect(() => {
     if (user?.token) {
       fetchRecords();
+      // Only fetch secure computations for non-patient users
+      if (user?.role !== 'patient') {
+        fetchSecureComputations();
+      }
     }
-  }, [user?.token]); // Only depend on the token
+  }, [user?.token, user?.role]); // Depend on token and role
 
   // Remove fetchRecords from dependencies of other useEffects
   useEffect(() => {
     if (!user) {
-      router.push('/login');
+      router.replace('/login');
       return;
     }
 
@@ -143,7 +188,7 @@ export default function DashboardPage() {
 
   const fetchUploads = async () => {
     try {
-      const res = await fetch("http://localhost:8000/uploads", {
+      const res = await fetch(API_ENDPOINTS.uploads, {
         headers: {
           Authorization: `Bearer ${user.token}`,
         },
@@ -166,7 +211,7 @@ export default function DashboardPage() {
 
   const fetchResult = async (id) => {
     try {
-      const response = await fetch(`http://localhost:8000/result/${id}`, {
+      const response = await fetch(API_ENDPOINTS.results(id), {
         headers: {
           'Authorization': `Bearer ${user.token}`
         }
@@ -193,7 +238,7 @@ export default function DashboardPage() {
 
     setDeletingId(uploadId);
     try {
-      const res = await fetch(`http://localhost:8000/uploads/${uploadId}`, {
+      const res = await fetch(API_ENDPOINTS.uploadById(uploadId), {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${user.token}`,
@@ -288,6 +333,12 @@ export default function DashboardPage() {
       label: 'Uploads', 
       icon: <UploadCloud className="w-5 h-5" />,
       requiredPermissions: [PERMISSIONS.WRITE_PATIENT_DATA]
+    },
+    { 
+      id: 'secure-computations', 
+      label: 'Secure Computations', 
+      icon: <Shield className="w-5 h-5" />,
+      requiredPermissions: [PERMISSIONS.READ_PATIENT_DATA]
     },
     { 
       id: 'metrics', 
@@ -511,6 +562,17 @@ export default function DashboardPage() {
     );
   }
 
+  // If user is a patient, show the patient dashboard instead
+  if (user?.role?.toUpperCase() === 'PATIENT') {
+    return (
+      <Layout>
+        <div className="container mx-auto px-4 py-8">
+          <PatientDashboard />
+        </div>
+      </Layout>
+    );
+  }
+
   return (
     <RoleProtectedRoute>
       <div className="min-h-screen bg-gray-50">
@@ -652,11 +714,11 @@ export default function DashboardPage() {
                       </div>
                       
                       <CustomButton
-                        onClick={() => router.push('/upload')}
+                        onClick={() => setActiveTab('uploads')}
                         className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700"
                       >
                         <Plus className="w-5 h-5" />
-                        <span>New Upload</span>
+                        <span>Upload Records</span>
                       </CustomButton>
                     </div>
 
@@ -730,6 +792,84 @@ export default function DashboardPage() {
                     <HealthMetricsDashboard patientData={records} />
                   </div>
                 </RoleProtectedRoute>
+              ) : activeTab === 'secure-computations' ? (
+                // Hide secure computations tab for patient users
+                user?.role === 'patient' ? (
+                  <div className="bg-gray-50 rounded-lg p-8 text-center">
+                    <Shield className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">Access Restricted</h3>
+                    <p className="text-gray-500">Secure computations are not available for patient accounts.</p>
+                  </div>
+                ) : (
+                  <RoleProtectedRoute requiredPermissions={[PERMISSIONS.READ_PATIENT_DATA]}>
+                    <div>
+                      <div className="flex justify-between items-center mb-6">
+                        <div className="flex items-center space-x-4">
+                          <h2 className="text-xl font-semibold text-gray-900">Secure Computations</h2>
+                        </div>
+                        <CustomButton
+                          onClick={() => router.push('/secure-computations')}
+                          className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700"
+                        >
+                          <Plus className="w-5 h-5" />
+                          <span>New Secure Computation</span>
+                        </CustomButton>
+                      </div>
+                      
+                      {secureComputations && secureComputations.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                          {secureComputations.slice(0, 6).map(computation => (
+                            <div 
+                              key={computation.computation_id} 
+                              className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                              onClick={() => router.push(`/secure-computations?id=${computation.computation_id}`)}
+                            >
+                              <div className="flex justify-between items-start mb-2">
+                                <h3 className="font-medium text-gray-900 truncate">
+                                  {computation.title || 'Untitled Computation'}
+                                </h3>
+                                <span className={`text-xs px-2 py-1 rounded-full ${computation.status === 'COMPLETED' ? 'bg-green-100 text-green-800' : computation.status === 'FAILED' ? 'bg-red-100 text-red-800' : computation.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                  {computation.status?.replace('_', ' ') || 'PENDING'}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-500 mb-3 truncate">
+                                {computation.description || 'No description provided'}
+                              </p>
+                              <div className="flex justify-between items-center text-xs text-gray-500">
+                                <span>Function: {computation.function_type || 'Average'}</span>
+                                <span>{computation.created_at ? new Date(computation.created_at).toLocaleDateString() : 'N/A'}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="bg-gray-50 rounded-lg p-8 text-center">
+                          <Shield className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">No Secure Computations Yet</h3>
+                          <p className="text-gray-500 mb-4">Start a new secure computation to analyze health data across institutions while preserving privacy.</p>
+                          <CustomButton
+                            onClick={() => router.push('/secure-computations')}
+                            className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700"
+                          >
+                            <Plus className="w-5 h-5" />
+                            <span>Start New Computation</span>
+                          </CustomButton>
+                        </div>
+                      )}
+                      
+                      {secureComputations && secureComputations.length > 6 && (
+                        <div className="mt-4 text-center">
+                          <button
+                            onClick={() => router.push('/secure-computations')}
+                            className="text-blue-500 hover:text-blue-700 font-medium"
+                          >
+                            View All Secure Computations
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </RoleProtectedRoute>
+                )
               ) : activeTab === 'analytics' ? (
                 <RoleProtectedRoute requiredPermissions={[PERMISSIONS.VIEW_ANALYTICS]}>
                   <div>
@@ -748,6 +888,13 @@ export default function DashboardPage() {
                       <div className="flex items-center space-x-4">
                         <h2 className="text-xl font-semibold text-gray-900">Upload Health Records</h2>
                       </div>
+                      <CustomButton
+                        onClick={() => router.push('/upload')}
+                        className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700"
+                      >
+                        <Plus className="w-5 h-5" />
+                        <span>Advanced Upload</span>
+                      </CustomButton>
                     </div>
                     <UploadForm onUploadSuccess={fetchRecords} />
                   </div>

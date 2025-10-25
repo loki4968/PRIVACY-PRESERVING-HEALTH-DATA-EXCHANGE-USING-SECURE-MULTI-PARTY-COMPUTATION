@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { AlertTriangle, Activity, TrendingUp, TrendingDown, Users, FileText, Calendar } from 'lucide-react';
 import HealthMetricsDashboard from '../components/HealthMetricsDashboard';
 import SecureComputationDashboard from '../components/SecureComputationDashboard';
+import { API_ENDPOINTS } from '../config/api';
 
 export default function AnalyticsPage() {
   const router = useRouter();
@@ -23,7 +24,7 @@ export default function AnalyticsPage() {
 
       try {
         setLoading(true);
-        const response = await fetch('http://localhost:8000/analytics', {
+        const response = await fetch(API_ENDPOINTS.analytics, {
           headers: {
             'Authorization': `Bearer ${user.token}`,
             'Content-Type': 'application/json',
@@ -161,4 +162,4 @@ export default function AnalyticsPage() {
       </div>
     </div>
   );
-} 
+}

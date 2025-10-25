@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Mail, Lock } from 'lucide-react';
 import OTPVerification from './OTPVerification';
 import PasswordInput from './PasswordInput';
+import { API_ENDPOINTS } from '../config/api';
 
 export default function LoginForm() {
     const [email, setEmail] = useState('');
@@ -24,9 +25,9 @@ export default function LoginForm() {
             // Login success is handled by AuthContext (redirects to dashboard)
         } catch (error) {
             // If the error indicates email verification needed
-            if (error.message?.toLowerCase().includes('verify')) {
+            if (error.message === 'email_not_verified' || error.message?.toLowerCase().includes('not verified')) {
                 setShowOtpInput(true);
-                toast.info('Please verify your email with OTP.');
+                // No need to show toast or send OTP as AuthContext already handles this
             } else {
                 toast.error(error.message || 'Failed to login');
             }
@@ -39,7 +40,7 @@ export default function LoginForm() {
         setLoading(true);
 
         try {
-            const res = await fetch('http://localhost:8000/verify-otp', {
+            const res = await fetch(API_ENDPOINTS.verifyOtp, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, otp }),
@@ -62,7 +63,7 @@ export default function LoginForm() {
     const handleResendOtp = async () => {
         setLoading(true);
         try {
-            const res = await fetch('http://localhost:8000/send-otp', {
+            const res = await fetch(API_ENDPOINTS.sendOtp, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email }),
@@ -200,4 +201,4 @@ export default function LoginForm() {
             </div>
         </div>
     );
-} 
+}

@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { Mail, Building2, Phone, MapPin, User, Shield } from 'lucide-react';
 import OTPVerification from './OTPVerification';
 import PasswordInput from './PasswordInput';
+import { API_ENDPOINTS } from '../config/api';
 
 export default function RegisterForm() {
     const router = useRouter();
@@ -53,7 +54,7 @@ export default function RegisterForm() {
             payload.append('location', formData.location);
             payload.append('privacy_accepted', true);
 
-            const response = await fetch('http://localhost:8000/register', {
+            const response = await fetch(API_ENDPOINTS.register, {
                 method: 'POST',
                 body: payload,
             });
@@ -61,49 +62,32 @@ export default function RegisterForm() {
             const data = await response.json();
 
             if (response.ok) {
-                // After successful registration, attempt to login
-                const loginFormData = new FormData();
-                loginFormData.append('email', formData.email);
-                loginFormData.append('password', formData.password);
-
-                const loginResponse = await fetch('http://localhost:8000/login', {
+                toast.success('Registration successful! Please verify your email with OTP.');
+                
+                // Send OTP after successful registration
+                const otpResponse = await fetch(API_ENDPOINTS.sendOtp, {
                     method: 'POST',
-                    body: loginFormData
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: formData.email }),
                 });
 
-                const loginData = await loginResponse.json();
-
-                if (loginResponse.ok) {
-                    localStorage.setItem('token', loginData.access_token);
-                    
-                    // Get user details
-                    const userResponse = await fetch('http://localhost:8000/me', {
-                        headers: {
-                            'Authorization': `Bearer ${loginData.access_token}`
-                        }
-                    });
-
-                    if (userResponse.ok) {
-                        const userData = await userResponse.json();
-                        // Update user context with complete information
-                        const userToUpdate = {
-                            ...userData,
-                            token: loginData.access_token,
-                            type: formData.organizationType.toUpperCase(),
-                            email_verified: true
-                        };
-                        updateUser(userToUpdate);
-                        toast.success('Registration successful! Welcome to Health Data Exchange');
-                        router.push('/dashboard');
-                    } else {
-                        throw new Error('Failed to fetch user details');
-                    }
+                if (otpResponse.ok) {
+                    // Show OTP verification section
+                    setShowOtpInput(true);
+                    setCurrentStep(2);
+                    toast.success('OTP sent to your email! Please check your inbox.');
                 } else {
-                    throw new Error('Registration successful but failed to log in');
+                    const otpError = await otpResponse.json();
+                    toast.error(otpError.detail || 'Failed to send OTP');
                 }
             } else {
-                const error = data.detail || 'Registration failed';
-                throw new Error(error);
+                // Display specific error message for email already registered
+                if (data.detail === "Email already registered") {
+                    toast.error('Email already registered. Please use a different email address.');
+                } else {
+                    const error = data.detail || 'Registration failed';
+                    toast.error(error);
+                }
             }
         } catch (error) {
             console.error('Registration error:', error);
@@ -116,20 +100,22 @@ export default function RegisterForm() {
     const handleOtpSubmit = async (otp) => {
         setLoading(true);
         try {
-            const res = await fetch('http://localhost:8000/verify-otp', {
+            const res = await fetch(API_ENDPOINTS.verifyOtp, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email: formData.email, otp }),
             });
 
             if (res.ok) {
-                toast.success('Email verified successfully!');
+                toast.success('Email verified successfully! You can now login.');
+                // Redirect to login page after successful verification
                 router.push('/login');
             } else {
                 const errorData = await res.json();
                 toast.error(errorData.detail || 'Invalid OTP');
             }
         } catch (error) {
+            console.error('OTP verification error:', error);
             toast.error('Failed to verify OTP');
         } finally {
             setLoading(false);
@@ -139,7 +125,7 @@ export default function RegisterForm() {
     const handleResendOtp = async () => {
         setLoading(true);
         try {
-            const res = await fetch('http://localhost:8000/send-otp', {
+            const res = await fetch(API_ENDPOINTS.sendOtp, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email: formData.email }),
@@ -164,6 +150,7 @@ export default function RegisterForm() {
         { value: 'LABORATORY', label: 'Laboratory' },
         { value: 'PHARMACY', label: 'Pharmacy' },
         { value: 'RESEARCH', label: 'Research' },
+        { value: 'PATIENT', label: 'Patient' },
         { value: 'OTHER', label: 'Other' },
     ];
 
@@ -432,4 +419,4 @@ export default function RegisterForm() {
             </div>
         </div>
     );
-} 
+}

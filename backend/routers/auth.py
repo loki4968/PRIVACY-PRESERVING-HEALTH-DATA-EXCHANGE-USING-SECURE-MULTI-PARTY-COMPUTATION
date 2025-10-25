@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from typing import Dict, Any, List
-from backend.models import Organization
-from backend.dependencies import get_db
-from backend.auth_utils import (
+from models import Organization
+from dependencies import get_db
+from auth_utils import (
     hash_password, verify_password, create_access_token, create_refresh_token,
     decode_access_token, UserRole, Permission, get_user_permissions
 )
@@ -28,10 +28,14 @@ class UserResponse(BaseModel):
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
 
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
 @router.post("/login", response_model=TokenResponse)
-def login(email: str, password: str, db: Session = Depends(get_db)):
-    org = db.query(Organization).filter_by(email=email).first()
-    if not org or not verify_password(password, org.password_hash):
+def login(request: LoginRequest, db: Session = Depends(get_db)):
+    org = db.query(Organization).filter_by(email=request.email).first()
+    if not org or not verify_password(request.password, org.password_hash):
         raise HTTPException(
             status_code=401, 
             detail="Invalid credentials",
@@ -40,14 +44,14 @@ def login(email: str, password: str, db: Session = Depends(get_db)):
     
     # Create tokens with role, permissions, and organization ID
     access_token = create_access_token({
-        "sub": org.email,
+        "sub": request.email,
         "id": org.id,
         "role": org.role,
         "permissions": [p.value for p in get_user_permissions(org.role)]
     })
     
     refresh_token = create_refresh_token({
-        "sub": org.email,
+        "sub": request.email,
         "id": org.id,
         "role": org.role
     })
@@ -100,4 +104,4 @@ def refresh_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=401,
             detail="Invalid refresh token"
-        ) 
+        )

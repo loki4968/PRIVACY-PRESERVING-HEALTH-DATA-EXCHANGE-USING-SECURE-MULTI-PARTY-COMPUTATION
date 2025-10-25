@@ -7,6 +7,7 @@ import { Card, CardTitle, CardContent, CardFooter } from '../components/ui/card'
 import { CustomButton } from '../components/ui/custom-button';
 import { Mail, ArrowRight, RefreshCw } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import { API_ENDPOINTS } from '../config/api';
 
 export default function VerifyEmailPage() {
   const [verificationCode, setVerificationCode] = useState('');
@@ -24,7 +25,7 @@ export default function VerifyEmailPage() {
   const handleResendCode = async () => {
     setResending(true);
     try {
-      const response = await fetch('http://localhost:8000/send-otp', {
+      const response = await fetch(API_ENDPOINTS.sendOtp, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -59,7 +60,7 @@ export default function VerifyEmailPage() {
 
     setIsSubmitting(true);
     try {
-      const response = await fetch('http://localhost:8000/verify-otp', {
+      const response = await fetch(API_ENDPOINTS.verifyOtp, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -151,4 +152,4 @@ export default function VerifyEmailPage() {
       </Card>
     </div>
   );
-} 
+}

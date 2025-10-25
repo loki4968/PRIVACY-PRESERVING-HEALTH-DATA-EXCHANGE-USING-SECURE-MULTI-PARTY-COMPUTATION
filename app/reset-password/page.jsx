@@ -6,6 +6,9 @@ import { Lock, Eye, EyeOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { CustomButton } from '../components/ui/custom-button';
 
+// Get API base URL from environment or use default
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
 export default function ResetPasswordPage() {
   const [passwords, setPasswords] = useState({
     password: '',
@@ -28,7 +31,7 @@ export default function ResetPasswordPage() {
       }
 
       try {
-        const response = await fetch('http://localhost:8000/verify-reset-token', {
+        const response = await fetch(`${API_BASE_URL}/verify-reset-token`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -40,7 +43,12 @@ export default function ResetPasswordPage() {
           throw new Error('Invalid or expired reset token');
         }
 
-        setValidToken(true);
+        const data = await response.json();
+        if (data.valid) {
+          setValidToken(true);
+        } else {
+          throw new Error('Invalid reset token');
+        }
       } catch (error) {
         toast.error(error.message);
         router.push('/forgot-password');
@@ -94,7 +102,7 @@ export default function ResetPasswordPage() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/reset-password', {
+      const response = await fetch(`${API_BASE_URL}/reset-password`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -229,4 +237,4 @@ export default function ResetPasswordPage() {
       </div>
     </div>
   );
-} 
+}

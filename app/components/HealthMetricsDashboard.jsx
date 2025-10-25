@@ -12,8 +12,13 @@ const HealthMetricsDashboard = ({ patientData }) => {
   const [websocket, setWebsocket] = useState(null);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  const [lastActivity, setLastActivity] = useState(null);
+  const [pingStatus, setPingStatus] = useState(null);
+  const [connectionHealth, setConnectionHealth] = useState(null);
   const MAX_RECONNECT_ATTEMPTS = 5;
   const RECONNECT_DELAY = 3000;
+  const PING_INTERVAL = 30000; // 30 seconds
 
   const connectWebSocket = useCallback(() => {
     try {
@@ -24,22 +29,52 @@ const HealthMetricsDashboard = ({ patientData }) => {
         return;
       }
 
-      // Create WebSocket connection with token
+      // Get user info for connection metadata
+      const userEmail = localStorage.getItem('userEmail') || 'unknown';
+      const userRole = localStorage.getItem('userRole') || 'unknown';
+      const userAgent = navigator.userAgent;
+
+      // Create WebSocket connection with token only
+      // The backend will extract email, role, and user agent from the token
+      console.log('Attempting to connect to WebSocket with token:', token);
       const ws = new WebSocket(`ws://localhost:8000/ws/metrics?token=${token}`);
+      setWebsocket(ws);
+      
+      setConnectionStatus('connecting');
       
       ws.onopen = () => {
         console.log('WebSocket connected');
         setReconnectAttempt(0); // Reset reconnect attempts on successful connection
+        setConnectionStatus('connected');
+        setLastActivity(new Date());
         toast.success('Connected to real-time metrics');
       };
 
       ws.onmessage = (event) => {
         try {
-          const newData = JSON.parse(event.data);
-          setFilteredData(prevData => ({
-            ...prevData,
-            ...newData
-          }));
+          setLastActivity(new Date());
+          const message = JSON.parse(event.data);
+          
+          // Handle different message types
+          if (message.type === 'metrics_update') {
+            setFilteredData(prevData => ({
+              ...prevData,
+              ...message.data
+            }));
+          } else if (message.type === 'connection_health') {
+            setConnectionHealth(message.data);
+          } else if (message.type === 'pong') {
+            setPingStatus({
+              latency: new Date().getTime() - message.data.timestamp,
+              serverTime: message.data.server_time
+            });
+          } else if (message.type === 'system_notification') {
+            toast(message.data.message, {
+              icon: message.data.level === 'error' ? '❌' : 
+                    message.data.level === 'warning' ? '⚠️' : '✅',
+              duration: 5000
+            });
+          }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
         }
@@ -47,30 +82,70 @@ const HealthMetricsDashboard = ({ patientData }) => {
 
       ws.onerror = (error) => {
         console.error('WebSocket error:', error);
-        toast.error('Error connecting to real-time metrics');
+        setConnectionStatus('error');
+        toast.error(`Error connecting to real-time metrics: ${error.message || 'Unknown error'}`);
+        
+        // Log detailed error information
+        console.error('WebSocket connection details:', {
+          url: `ws://localhost:8000/ws/metrics?token=${token.substring(0, 10)}...`,
+          readyState: ws.readyState,
+          error: error
+        });
       };
 
       ws.onclose = (event) => {
         console.log('WebSocket closed:', event.code, event.reason);
+        setConnectionStatus('disconnected');
+        
+        // Log detailed close information
+        console.error('WebSocket connection closed:', {
+          code: event.code,
+          reason: event.reason,
+          wasClean: event.wasClean
+        });
         
         // Attempt to reconnect if we haven't exceeded max attempts
         if (reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
           console.log(`Attempting to reconnect (${reconnectAttempt + 1}/${MAX_RECONNECT_ATTEMPTS})...`);
+          setConnectionStatus('reconnecting');
           setTimeout(() => {
             setReconnectAttempt(prev => prev + 1);
             connectWebSocket();
           }, RECONNECT_DELAY);
         } else {
-          toast.error('Failed to connect to real-time metrics after multiple attempts');
+          toast.error(`Failed to connect to real-time metrics after multiple attempts. Last error code: ${event.code}`);
         }
       };
 
       setWebsocket(ws);
     } catch (error) {
       console.error('Error connecting to WebSocket:', error);
+      setConnectionStatus('error');
       toast.error('Error connecting to real-time metrics');
     }
   }, [reconnectAttempt]);
+
+  // Send periodic ping to keep connection alive and monitor health
+  useEffect(() => {
+    let pingInterval;
+    
+    if (websocket && websocket.readyState === WebSocket.OPEN) {
+      pingInterval = setInterval(() => {
+        try {
+          websocket.send(JSON.stringify({
+            type: 'ping',
+            data: { timestamp: new Date().getTime() }
+          }));
+        } catch (error) {
+          console.error('Error sending ping:', error);
+        }
+      }, PING_INTERVAL);
+    }
+    
+    return () => {
+      if (pingInterval) clearInterval(pingInterval);
+    };
+  }, [websocket, PING_INTERVAL]);
 
   useEffect(() => {
     connectWebSocket();
@@ -268,6 +343,23 @@ const HealthMetricsDashboard = ({ patientData }) => {
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Health Data Exchange</h1>
           <p className="mt-1 text-gray-500">Monitor and analyze your health metrics in real-time</p>
+          <div className="mt-1 flex items-center">
+            <span className={`inline-block w-2 h-2 rounded-full mr-2 ${{
+              'connected': 'bg-green-500',
+              'connecting': 'bg-yellow-500 animate-pulse',
+              'reconnecting': 'bg-yellow-500 animate-pulse',
+              'disconnected': 'bg-red-500',
+              'error': 'bg-red-500'
+            }[connectionStatus]}`}></span>
+            <span className="text-xs text-gray-500">
+              {connectionStatus === 'connected' && 'Connected'}
+              {connectionStatus === 'connecting' && 'Connecting...'}
+              {connectionStatus === 'reconnecting' && `Reconnecting (${reconnectAttempt}/${MAX_RECONNECT_ATTEMPTS})...`}
+              {connectionStatus === 'disconnected' && 'Disconnected'}
+              {connectionStatus === 'error' && 'Connection Error'}
+              {lastActivity && connectionStatus === 'connected' && ` · Last activity: ${new Date(lastActivity).toLocaleTimeString()}`}
+            </span>
+          </div>
         </div>
         
         <div className="flex items-center space-x-4">
@@ -306,4 +398,4 @@ const HealthMetricsDashboard = ({ patientData }) => {
   );
 };
 
-export default HealthMetricsDashboard; 
+export default HealthMetricsDashboard;

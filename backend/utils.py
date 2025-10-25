@@ -5,10 +5,10 @@ import hashlib
 import re
 from typing import Dict, List, Union, Optional, Tuple, Any
 from datetime import datetime
-from backend.config import ALLOWED_EXTENSIONS, MAX_FILE_SIZE, VALID_CATEGORIES
+from config import ALLOWED_EXTENSIONS, MAX_FILE_SIZE, VALID_CATEGORIES
 import statistics
 import math
-from backend.services.predictive_analytics import generate_health_insights
+from services.predictive_analytics import generate_health_insights
 
 class FileValidationError(Exception):
     pass
@@ -407,6 +407,24 @@ def analyze_blood_sugar_data(data: List[Dict[str, Any]]) -> Dict[str, Any]:
             }
         }
     
+    # Check if any analysis was performed
+    if not results["analysis"]:
+        # No analyzable columns were found, provide helpful information
+        results["status"] = "warning"
+        results["message"] = "No analyzable blood test metrics found in the uploaded file"
+        results["available_columns"] = list(available_columns)
+        results["expected_columns"] = metrics_to_analyze
+        
+        # Add a placeholder analysis to prevent frontend errors
+        results["analysis"] = {
+            "_info": {
+                "message": "No analyzable blood test metrics found",
+                "available_columns": list(available_columns),
+                "expected_columns": metrics_to_analyze,
+                "recommendation": "Please upload a file with standard blood test metrics or check column names"
+            }
+        }
+    
     return results
 
 def run_analysis(file_path: str, category: str) -> Dict[str, Any]:
@@ -471,10 +489,29 @@ def run_analysis(file_path: str, category: str) -> Dict[str, Any]:
         }
     
     try:
+        # Auto-detect category if not provided, set to auto, or if we can find a better match
+        if not category or category == "unknown" or category == "auto":
+            # Check for blood sugar related columns
+            blood_sugar_columns = ['blood sugar', 'glucose', 'bloodsugar', 'sugar level', 'a1c']
+            if "BloodSugar_mg_dL" in data[0] or any(any(col.lower() in field.lower() for col in blood_sugar_columns) for field in data[0].keys()):
+                category = "blood_sugar"
+                print(f"Auto-detected category: {category}")
+            
+            # Check for blood test related columns
+            blood_test_columns = ['hemoglobin', 'white blood cells', 'red blood cells', 'platelets', 'hematocrit']
+            if any(any(col.lower() in field.lower() for col in blood_test_columns) for field in data[0].keys()):
+                category = "blood_test"
+                print(f"Auto-detected category: {category}")
+            
+            # Check for vital signs related columns
+            vital_signs_columns = ['heart rate', 'blood pressure', 'temperature', 'respiratory rate']
+            if any(any(col.lower() in field.lower() for col in vital_signs_columns) for field in data[0].keys()):
+                category = "vital_signs"
+                print(f"Auto-detected category: {category}")
+        
         # Check if this is a blood sugar report
-        if "BloodSugar_mg_dL" in data[0]:
-            print("Detected blood sugar report format")
-            category = "blood_sugar"  # Override category for blood sugar reports
+        if "BloodSugar_mg_dL" in data[0] or category == "blood_sugar":
+            print("Processing blood sugar report format")
             results = analyze_blood_sugar_data(data)
         # Initialize results based on category
         elif category == "blood_test":
@@ -484,22 +521,25 @@ def run_analysis(file_path: str, category: str) -> Dict[str, Any]:
         elif category == "vital_signs":
             results = analyze_vital_signs(data)
         else:
+            # Provide more detailed generic analysis
             results = {
                 "status": "success",
-                "category": category,
+                "category": category or "unknown",
                 "summary": {
                     "total_records": len(data),
                     "date_range": {
-                        "start": data[0].get("Date") or data[0].get("Test Date"),
-                        "end": data[-1].get("Date") or data[-1].get("Test Date")
-                    }
+                        "start": data[0].get("Date") or data[0].get("Test Date") or "Unknown",
+                        "end": data[-1].get("Date") or data[-1].get("Test Date") or "Unknown"
+                    },
+                    "message": "This file contains health data that requires further categorization. Please select a specific category for more detailed analysis."
                 },
                 "analysis": {
                     "columns": list(data[0].keys()),
                     "sample_values": {
-                        col: [row[col] for row in data[:5] if row[col]]
+                        col: [row[col] for row in data[:5] if col in row and row[col]]
                         for col in data[0].keys()
-                    }
+                    },
+                    "possible_categories": ["blood_sugar", "blood_test", "vital_signs", "medical_history"]
                 }
             }
         
@@ -520,8 +560,110 @@ def run_analysis(file_path: str, category: str) -> Dict[str, Any]:
             "error": error_msg
         }
 
+def get_date_range(data):
+    """Extract date range from data if available"""
+    date_columns = ['date', 'test date', 'collection date', 'sample date', 'timestamp', 'time']
+    
+    # Find a date column
+    date_col = None
+    for col in data[0].keys():
+        if any(date_term.lower() in col.lower() for date_term in date_columns):
+            date_col = col
+            break
+    
+    if not date_col or not data:
+        return {"start": None, "end": None}
+    
+    # Extract dates, handling potential missing values
+    dates = [row.get(date_col) for row in data if row.get(date_col)]
+    if not dates:
+        return {"start": None, "end": None}
+    
+    return {"start": min(dates), "end": max(dates)}
+
+
+def infer_data_category(data, columns):
+    """Infer the data category based on the values in the data"""
+    # Count occurrences of keywords in the data values
+    keyword_counts = {
+        "blood_sugar": 0,
+        "blood_test": 0,
+        "vital_signs": 0,
+        "medical_history": 0
+    }
+    
+    # Keywords for each category
+    keywords = {
+        "blood_sugar": ['glucose', 'sugar', 'a1c', 'hba1c', 'mg/dl', 'mmol/l', 'fasting', 'postprandial'],
+        "blood_test": ['hemoglobin', 'wbc', 'rbc', 'platelets', 'cholesterol', 'triglycerides', 'hdl', 'ldl', 'creatinine'],
+        "vital_signs": ['heart rate', 'blood pressure', 'temperature', 'bpm', 'systolic', 'diastolic', 'mmhg', 'celsius', 'fahrenheit'],
+        "medical_history": ['diagnosis', 'condition', 'treatment', 'medication', 'allergies', 'surgery']
+    }
+    
+    # Check column names first
+    for col in columns:
+        col_lower = col.lower()
+        for category, terms in keywords.items():
+            if any(term.lower() in col_lower for term in terms):
+                keyword_counts[category] += 3  # Give more weight to column names
+    
+    # Check values in the first few rows
+    sample_size = min(10, len(data))
+    for row in data[:sample_size]:
+        for col, value in row.items():
+            if not value or not isinstance(value, str):
+                continue
+                
+            value_lower = value.lower()
+            for category, terms in keywords.items():
+                if any(term.lower() in value_lower for term in terms):
+                    keyword_counts[category] += 1
+    
+    # Check for numeric patterns in the data
+    numeric_patterns = {
+        "blood_sugar": r'\b([5-9][0-9]|1[0-9]{2}|2[0-9]{2}|3[0-9]{2}|4[0-9]{2})\s*(mg/dl|mg/dL)\b',  # 50-499 mg/dL
+        "blood_pressure": r'\b(1[0-9]{2}|[6-9][0-9])/([4-9][0-9]|10[0-9])\b',  # 60-199/40-109
+        "temperature": r'\b(3[5-9]\.[0-9]|4[0-1]\.[0-9])\s*[°C]\b|\b(9[5-9]\.[0-9]|10[0-9]\.[0-9])\s*[°F]\b'  # 35-41°C or 95-109°F
+    }
+    
+    for row in data[:sample_size]:
+        for col, value in row.items():
+            if not value or not isinstance(value, str):
+                continue
+                
+            if re.search(numeric_patterns["blood_sugar"], value):
+                keyword_counts["blood_sugar"] += 2
+            if re.search(numeric_patterns["blood_pressure"], value):
+                keyword_counts["vital_signs"] += 2
+            if re.search(numeric_patterns["temperature"], value):
+                keyword_counts["vital_signs"] += 2
+    
+    # Find the category with the highest count
+    max_count = 0
+    inferred_category = None
+    
+    for category, count in keyword_counts.items():
+        if count > max_count:
+            max_count = count
+            inferred_category = category
+    
+    # Only return a category if we have a reasonable confidence
+    if max_count >= 3:
+        return inferred_category
+    
+    return None
+
+
 def analyze_blood_test(data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Analyze blood test data."""
+    if not data:
+        return {
+            "status": "error",
+            "category": "blood_test",
+            "error": "No data provided for analysis",
+            "analysis": {}
+        }
+        
     results = {
         "status": "success",
         "category": "blood_test",
@@ -529,8 +671,8 @@ def analyze_blood_test(data: List[Dict[str, Any]]) -> Dict[str, Any]:
         "metadata": {
             "total_records": len(data),
             "date_range": {
-                "start": data[0].get("Test Date") or data[0].get("Date"),
-                "end": data[-1].get("Test Date") or data[-1].get("Date")
+                "start": data[0].get("Test Date") or data[0].get("Date") if data else None,
+                "end": data[-1].get("Test Date") or data[-1].get("Date") if data else None
             },
             "notes": [row.get("Notes", "") for row in data if row.get("Notes")]
         }
@@ -556,7 +698,9 @@ def analyze_blood_test(data: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
     
     # Determine which format we're dealing with
-    available_columns = set(data[0].keys())
+    available_columns = set()
+    if data and len(data) > 0:
+        available_columns = set(data[0].keys())
     format_type = "standard" if any(col in available_columns for col in column_mappings["standard"]) else "health_data"
     
     print(f"Detected format type: {format_type}")
@@ -565,8 +709,11 @@ def analyze_blood_test(data: List[Dict[str, Any]]) -> Dict[str, Any]:
     # Add format type to results
     results["format_type"] = format_type
     
-    # Process metrics based on format
+    # Define metrics to analyze based on format
     metrics_to_analyze = column_mappings[format_type]
+    
+    # Log the metrics we're looking for
+    print(f"Looking for metrics: {metrics_to_analyze}")
     
     for metric in metrics_to_analyze:
         # Handle encoding issues with degree symbol

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { API_ENDPOINTS } from '../config/api';
 import SecureComputationDashboard from '../components/SecureComputationDashboard';
 import HealthMetricsDashboard from '../components/HealthMetricsDashboard';
 import { AlertTriangle } from 'lucide-react';
@@ -17,7 +18,7 @@ const Dashboard = () => {
   const fetchHealthData = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:8000/analytics', {
+      const response = await fetch(API_ENDPOINTS.analytics, {
         headers: {
           'Authorization': `Bearer ${user.token}`,
           'Content-Type': 'application/json',

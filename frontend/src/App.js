@@ -8,12 +8,19 @@ import Profile from './components/Profile';
 import ChangePassword from './components/ChangePassword';
 import HealthDataUpload from './components/HealthDataUpload';
 import SecureComputation from './components/SecureComputation';
+import MLDashboard from './components/MLDashboard';
+import FederatedLearning from './components/FederatedLearning';
+import RiskAssessment from './components/RiskAssessment';
+import TimeSeriesAnalysis from './components/TimeSeriesAnalysis';
+import PatientReportRequest from './components/PatientReportRequest';
+import Navigation from './components/Navigation';
 import PrivateRoute from './components/PrivateRoute';
 
 function App() {
   return (
     <AuthProvider>
       <Router>
+        <Navigation />
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
@@ -57,6 +64,46 @@ function App() {
               </PrivateRoute>
             }
           />
+          <Route
+            path="/ml-dashboard"
+            element={
+              <PrivateRoute>
+                <MLDashboard />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/federated-learning"
+            element={
+              <PrivateRoute>
+                <FederatedLearning />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/risk-assessment"
+            element={
+              <PrivateRoute>
+                <RiskAssessment />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/time-series"
+            element={
+              <PrivateRoute>
+                <TimeSeriesAnalysis />
+              </PrivateRoute>
+            }
+          />
+          <Route
+            path="/report-requests"
+            element={
+              <PrivateRoute>
+                <PatientReportRequest />
+              </PrivateRoute>
+            }
+          />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Router>
@@ -64,4 +111,4 @@ function App() {
   );
 }
 
-export default App; 
+export default App;

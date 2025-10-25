@@ -19,9 +19,25 @@ export default function Navigation() {
         { name: 'Dashboard', href: '/dashboard', permission: 'view_dashboard' },
         { name: 'Patients', href: '/patients', permission: 'view_patients' },
         { name: 'Records', href: '/records', permission: 'view_records' },
+        { name: 'Secure Computations', href: '/analysis', permission: 'view_analytics', hideForPatient: true },
         { name: 'Analytics', href: '/analytics', permission: 'view_analytics' },
         { name: 'Settings', href: '/settings', permission: 'manage_settings' },
-    ].filter(item => user?.permissions?.includes(item.permission));
+    ].filter(item => {
+        // Hide items specifically marked to be hidden for patients
+        if (user?.role === 'patient' && item.hideForPatient) {
+            return false;
+        }
+        
+        // Show items based on permissions
+        const hasPermission = user?.permissions?.includes(item.permission);
+        
+        // Special case for patient-specific items
+        if (item.role === 'patient') {
+            return user?.role === 'patient';
+        }
+        
+        return hasPermission;
+    });
 
     return (
         <Disclosure as="nav" className="bg-white shadow">
@@ -193,4 +209,4 @@ export default function Navigation() {
             )}
         </Disclosure>
     );
-} 
+}

@@ -6,8 +6,8 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import create_engine, text
-from backend.config import DATABASE_URL, DATABASE_CONNECT_ARGS
-from backend.models import Base
+from config import DATABASE_URL, DATABASE_CONNECT_ARGS
+from models import Base
 
 def reset_database():
     print("Resetting database...")
@@ -24,7 +24,7 @@ def reset_database():
     print("✓ Created all tables")
     
     # Clear upload directory
-    from backend.config import UPLOAD_DIR
+    from config import UPLOAD_DIR
     if os.path.exists(UPLOAD_DIR):
         for root, dirs, files in os.walk(UPLOAD_DIR, topdown=False):
             for name in files:

@@ -12,6 +12,7 @@ import { CustomButton } from "../components/ui/custom-button.jsx";
 import { Card, CardTitle, CardContent, CardFooter } from "../components/ui/card.jsx";
 import { Progress } from "../components/ui/progress.jsx";
 import OTPVerification from "../components/OTPVerification";
+import { API_ENDPOINTS, API_BASE_URL } from "../config/api.js";
 import {
   Building2,
   Mail,
@@ -269,27 +270,68 @@ export default function UploadPage() {
       formData.append("file", file);
       formData.append("category", category);
 
-      const uploadRes = await fetch("http://localhost:8000/upload", {
-        method: "POST",
-        body: formData,
-        headers: {
-          'Authorization': `Bearer ${user.token}`,
-          'X-Force-Upload': 'true'  // Add force upload header
-        },
+      // Use XMLHttpRequest instead of fetch for more reliable file upload
+      const xhr = new XMLHttpRequest();
+      
+      // Create a Promise to handle the XHR request
+      const uploadPromise = new Promise((resolve, reject) => {
+        xhr.open('POST', API_ENDPOINTS.upload, true);
+        
+        // Set headers
+        xhr.setRequestHeader('Authorization', `Bearer ${user.token}`);
+        xhr.setRequestHeader('X-Force-Upload', 'true');
+        
+        // Handle response
+        xhr.onload = function() {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try {
+              const jsonResponse = JSON.parse(xhr.responseText);
+              resolve(jsonResponse);
+            } catch (e) {
+              console.error("Failed to parse response:", e);
+              reject(new Error("Failed to read server response"));
+            }
+          } else {
+            try {
+              const errorData = JSON.parse(xhr.responseText);
+              reject(new Error(errorData.detail || 'Upload failed'));
+            } catch (e) {
+              reject(new Error('Upload failed'));
+            }
+          }
+        };
+        
+        // Handle network errors
+        xhr.onerror = function() {
+          reject(new Error('Network error during upload'));
+        };
+        
+        // Track upload progress
+        xhr.upload.onprogress = function(e) {
+          if (e.lengthComputable) {
+            const percentComplete = Math.round((e.loaded / e.total) * 100);
+            setProgress(percentComplete);
+          }
+        };
+        
+        // Send the form data
+        xhr.send(formData);
       });
-
+      
+      // Wait for the upload to complete
       let responseData;
       try {
-        responseData = await uploadRes.json();
+        responseData = await uploadPromise;
       } catch (e) {
-        console.error("Failed to parse response:", e);
-        toast.error("Failed to read server response");
+        console.error("Upload error:", e);
+        toast.error(e.message || "Failed to upload file");
         setUploading(false);
         setProgress(0);
         return;
       }
 
-      if (!uploadRes.ok) {
+      // Check response status from responseData instead of uploadRes
+      if (responseData?.status === 'error' || !responseData?.result_id) {
         toast.error(responseData?.detail || "Upload failed");
         setUploading(false);
         setProgress(0);
@@ -326,7 +368,7 @@ export default function UploadPage() {
   const handleVerifyOTP = async (otp) => {
     setVerifying(true);
     try {
-      const response = await fetch('http://localhost:8000/verify-otp', {
+      const response = await fetch(API_ENDPOINTS.verifyOtp, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

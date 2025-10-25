@@ -1,13 +1,65 @@
 from fastapi import Request
 from sqlalchemy.orm import Session
-from database import AuditLog, Organization
+from models import AuditLog, Organization
 from datetime import datetime
 import json
-from typing import Optional, Any, Dict
+import logging
+import os
+from typing import Optional, Any, Dict, Union
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger("audit")
+
+# Configure file handler if LOG_DIR is set
+LOG_DIR = os.environ.get("LOG_DIR", "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+file_handler = logging.FileHandler(os.path.join(LOG_DIR, "audit.log"))
+file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(file_handler)
 
 class AuditLogger:
-    def __init__(self, db: Session):
+    def __init__(self, db: Optional[Session] = None):
         self.db = db
+        
+    def log_event(self, event_type: str, user_id: Optional[Union[int, str]] = None, details: Optional[Dict[str, Any]] = None):
+        """Log an event to the audit log file without requiring a database connection.
+        
+        This is useful for WebSocket events or other scenarios where a database session may not be available.
+        
+        Args:
+            event_type: The type of event (e.g., websocket_connected, websocket_disconnected)
+            user_id: The ID of the user or organization associated with the event
+            details: Additional details about the event
+        """
+        try:
+            event_data = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "event_type": event_type,
+                "user_id": user_id,
+                "details": details or {}
+            }
+            
+            # Log to file via the logger
+            logger.info(f"AUDIT: {json.dumps(event_data)}")
+            
+            # If a database connection is available, also log to the database
+            if self.db is not None:
+                try:
+                    self.log_action(
+                        user_id=user_id if isinstance(user_id, int) else None,
+                        action=event_type,
+                        resource_type="system",
+                        details=details,
+                        request=None
+                    )
+                except Exception as db_error:
+                    logger.error(f"Failed to log event to database: {str(db_error)}")
+        except Exception as e:
+            logger.error(f"Failed to log event: {str(e)}")
 
     def log_action(
         self,
@@ -35,7 +87,7 @@ class AuditLogger:
         except Exception as e:
             self.db.rollback()
             # Log the error but don't raise it to prevent disrupting the main flow
-            print(f"Failed to create audit log: {str(e)}")
+            logger.error(f"Failed to create audit log: {str(e)}")
 
     def get_user_actions(
         self,
@@ -144,4 +196,4 @@ class AuditLogger:
 #     resource_id=1,
 #     details={"status": "success"},
 #     request=request
-# ) 
+# )

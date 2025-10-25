@@ -98,7 +98,7 @@ export class SessionManager {
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(ACTIVITY_KEY);
   }
-
+  
   // Check for concurrent sessions
   static async checkConcurrentSessions() {
     try {
@@ -107,7 +107,7 @@ export class SessionManager {
         return true; // No session to check
       }
 
-      const response = await fetch('http://localhost:8000/check-session', {
+      const response = await fetch(`${API_BASE_URL}/check-session`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -119,19 +119,61 @@ export class SessionManager {
       }
 
       if (!response.ok) {
-        // Don't treat session check failures as critical errors
-        console.warn('Session check skipped:', response.status);
-        return true;
+        return false;
       }
-
+      
       const data = await response.json();
-      return data.valid !== false; // Consider session valid unless explicitly marked invalid
+      return !data.hasConcurrentSession;
     } catch (error) {
-      // Don't fail on session check errors
-      console.warn('Session check error:', error);
-      return true;
+      console.error('Error checking concurrent sessions:', error);
+      return true; // Default to allowing login on error
     }
   }
 }
 
-export const sessionManager = new SessionManager(); 
+// Export a singleton instance
+const sessionManagerInstance = typeof window !== 'undefined' ? new SessionManager() : null;
+
+// Export getToken function for services to use
+export const getToken = () => {
+  if (typeof window === 'undefined') return null;
+  
+  // First try to get token from localStorage directly
+  const token = localStorage.getItem('token') || localStorage.getItem('auth_token');
+  if (token) return token;
+  
+  // If not found, try to get from session data
+  if (sessionManagerInstance) {
+    const sessionData = sessionManagerInstance.getSessionData();
+    if (sessionData && sessionData.token) return sessionData.token;
+  }
+  
+  return null;
+}
+
+// Check if session is valid
+export const checkSession = async () => {
+  try {
+    const token = getToken();
+    if (!token) return false;
+    
+    const response = await fetch('/api/auth/check-session', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    
+    if (!response.ok) {
+      // Don't treat session check failures as critical errors
+      console.warn('Session check skipped:', response.status);
+      return true;
+    }
+
+    const data = await response.json();
+    return data.valid !== false; // Consider session valid unless explicitly marked invalid
+  } catch (error) {
+    // Don't fail on session check errors
+    console.warn('Session check error:', error);
+    return true;
+  }
+}
+
+export const sessionManager = new SessionManager();

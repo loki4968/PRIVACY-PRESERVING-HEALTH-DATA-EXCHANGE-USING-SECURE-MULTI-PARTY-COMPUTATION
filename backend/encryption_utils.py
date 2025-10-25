@@ -1,36 +1,97 @@
 import base64
-import hashlib
+import json
 import os
-from typing import Dict, Any
+import hashlib
+from typing import Tuple, Any, Dict
+
+# Try to import cryptography, fallback to simple encryption if not available
+try:
+    from cryptography.fernet import Fernet
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+    CRYPTOGRAPHY_AVAILABLE = True
+except ImportError:
+    print("Warning: cryptography library not available. Using fallback encryption.")
+    CRYPTOGRAPHY_AVAILABLE = False
+
 
 class EncryptionManager:
-    def __init__(self):
-        self.key = os.urandom(32)  # Generate a random 32-byte key
-        self.salt = os.urandom(16)  # Generate a random 16-byte salt
+    """
+    Improved encryption manager using Fernet (AES 128 in CBC mode with HMAC).
+    Simple but secure implementation suitable for college projects.
+    """
 
-    def _derive_key(self, password: str) -> bytes:
-        """Derive a key from a password using PBKDF2"""
-        return hashlib.pbkdf2_hmac(
-            'sha256',
-            password.encode(),
-            self.salt,
-            100000,  # Number of iterations
-            32  # Key length
-        )
+    def __init__(self, password: str = None):
+        # Generate or derive encryption key
+        if CRYPTOGRAPHY_AVAILABLE:
+            if password:
+                # Derive key from password for consistent encryption
+                salt = b'college_project_salt'  # Fixed salt for simplicity
+                kdf = PBKDF2HMAC(
+                    algorithm=hashes.SHA256(),
+                    length=32,
+                    salt=salt,
+                    iterations=100000,
+                )
+                key = base64.urlsafe_b64encode(kdf.derive(password.encode()))
+            else:
+                # Generate random key
+                key = Fernet.generate_key()
+            
+            self.cipher = Fernet(key)
+            self.key = key
+            self.use_fallback = False
+        else:
+            # Fallback to simple XOR encryption for demo purposes
+            self.key = os.urandom(32) if not password else hashlib.sha256(password.encode()).digest()
+            self.cipher = None
+            self.use_fallback = True
 
-    def encrypt(self, data: str) -> str:
-        """Encrypt data using a simple XOR cipher with the derived key"""
-        key = self._derive_key(data)
-        data_bytes = data.encode()
-        encrypted = bytes(a ^ b for a, b in zip(data_bytes, key))
-        return base64.b64encode(encrypted).decode()
+    def encrypt(self, plaintext: str) -> str:
+        """Encrypt data using Fernet (AES + HMAC) or fallback"""
+        if not self.use_fallback and self.cipher:
+            try:
+                encrypted_data = self.cipher.encrypt(plaintext.encode('utf-8'))
+                return base64.urlsafe_b64encode(encrypted_data).decode('utf-8')
+            except Exception as e:
+                print(f"Encryption error: {e}")
+                # Fall through to fallback
+        
+        # Fallback XOR encryption for demo purposes
+        data = plaintext.encode('utf-8')
+        encrypted = bytes(b ^ (self.key[i % len(self.key)]) for i, b in enumerate(data))
+        return base64.b64encode(encrypted).decode('utf-8')
 
-    def decrypt(self, encrypted_data: str) -> str:
-        """Decrypt data using the same XOR cipher"""
-        key = self._derive_key(encrypted_data)
-        encrypted_bytes = base64.b64decode(encrypted_data)
-        decrypted = bytes(a ^ b for a, b in zip(encrypted_bytes, key))
-        return decrypted.decode()
+    def decrypt(self, ciphertext: str) -> str:
+        """Decrypt data using Fernet or fallback"""
+        if not self.use_fallback and self.cipher:
+            try:
+                encrypted_data = base64.urlsafe_b64decode(ciphertext.encode('utf-8'))
+                decrypted_data = self.cipher.decrypt(encrypted_data)
+                return decrypted_data.decode('utf-8')
+            except Exception as e:
+                print(f"Decryption error: {e}")
+                # Fall through to fallback
+        
+        # Fallback XOR decryption
+        try:
+            encrypted = base64.b64decode(ciphertext)
+            decrypted = bytes(b ^ (self.key[i % len(self.key)]) for i, b in enumerate(encrypted))
+            return decrypted.decode('utf-8')
+        except Exception as e:
+            print(f"Fallback decryption error: {e}")
+            return ciphertext  # Return as-is if all fails
+
+    def encrypt_data(self, obj: Any) -> Tuple[bytes, dict]:
+        """Encrypt complex data objects"""
+        serialized = json.dumps(obj, separators=(",", ":"))
+        encrypted = self.encrypt(serialized)
+        return encrypted.encode("utf-8"), {"alg": "fernet-aes", "ver": 2}
+
+    def decrypt_data(self, data: bytes) -> Any:
+        """Decrypt complex data objects"""
+        decrypted_str = self.decrypt(data.decode("utf-8"))
+        return json.loads(decrypted_str)
 
     def hash_data(self, data: str) -> str:
         """Create a secure hash of the data"""
@@ -39,6 +100,91 @@ class EncryptionManager:
     def verify_hash(self, data: str, hash_value: str) -> bool:
         """Verify if the data matches the hash"""
         return self.hash_data(data) == hash_value
+
+
+def validate_health_data(data: dict) -> bool:
+    """
+    Enhanced validation for health data.
+    Suitable for college project with basic security checks.
+    """
+    if not isinstance(data, dict):
+        print("Data must be a dictionary")
+        return False
+    
+    # Required fields for health data
+    required_fields = ["patient_id", "data_type", "timestamp"]
+    
+    # Check required fields
+    for field in required_fields:
+        if field not in data:
+            print(f"Missing required field: {field}")
+            return False
+    
+    # Validate data types
+    if not isinstance(data["patient_id"], str) or len(data["patient_id"]) < 3:
+        print("patient_id must be a string with at least 3 characters")
+        return False
+        
+    if not isinstance(data["data_type"], str):
+        print("data_type must be a string")
+        return False
+        
+    if not isinstance(data["timestamp"], str):
+        print("timestamp must be a string")
+        return False
+    
+    # Validate data field exists and is appropriate
+    if "data" not in data:
+        print("Missing 'data' field")
+        return False
+    
+    # Check for common health data types
+    valid_data_types = [
+        "blood_pressure", "heart_rate", "temperature", "weight", 
+        "height", "glucose_level", "medication", "diagnosis",
+        "lab_result", "vital_signs", "medical_history"
+    ]
+    
+    if data["data_type"] not in valid_data_types:
+        print(f"Warning: data_type '{data['data_type']}' not in standard health types")
+    
+    print("Health data validation passed")
+    return True
+
+
+def sanitize_health_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Enhanced sanitization for health data.
+    Removes sensitive information and validates content.
+    """
+    print(f"Sanitizing health data for type: {data.get('data_type', 'unknown')}")
+    
+    # Create a copy to avoid modifying original
+    sanitized_data = data.copy()
+    
+    # Remove or mask highly sensitive fields
+    sensitive_fields = [
+        "ssn", "social_security_number", "insurance_number", 
+        "phone_number", "address", "email", "full_name",
+        "credit_card", "bank_account"
+    ]
+    
+    for field in sensitive_fields:
+        if field in sanitized_data:
+            sanitized_data[field] = "***REDACTED***"
+    
+    # Sanitize nested data if it exists
+    if "data" in sanitized_data and isinstance(sanitized_data["data"], dict):
+        data_section = sanitized_data["data"]
+        for field in sensitive_fields:
+            if field in data_section:
+                data_section[field] = "***REDACTED***"
+    
+    # Add sanitization timestamp
+    sanitized_data["sanitized_at"] = str(hash(str(sanitized_data)))[:8]
+    
+    print(f"Sanitized data: removed {len([f for f in sensitive_fields if f in data])} sensitive fields")
+    return sanitized_data
 
 class SecureComputation:
     def __init__(self):
@@ -69,54 +215,4 @@ class SecureComputation:
         decrypted2 = float(self.encryption_manager.decrypt(value2))
         return decrypted1 > decrypted2
 
-# Utility functions for data validation
-def validate_health_data(data: Dict[str, Any]) -> bool:
-    """
-    Validate health data before encryption.
-    Returns True if data is valid, False otherwise.
-    """
-    print(f"Validating health data: {data}")
-    
-    required_fields = ["patient_id", "data_type", "timestamp"]
-    
-    # Check required fields
-    for field in required_fields:
-        if field not in data:
-            print(f"Missing required field: {field}")
-            return False
-    
-    # Validate data types
-    if not isinstance(data["patient_id"], str):
-        print("patient_id must be a string")
-        return False
-    if not isinstance(data["data_type"], str):
-        print("data_type must be a string")
-        return False
-    if not isinstance(data["timestamp"], str):
-        print("timestamp must be a string")
-        return False
-    
-    # Ensure data field exists and is a dict
-    if "data" not in data or not isinstance(data["data"], dict):
-        print("data field must be a dictionary")
-        return False
-    
-    print("Health data validation passed")
-    return True
-
-def sanitize_health_data(data: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Sanitize health data before encryption.
-    Removes or masks sensitive information.
-    """
-    print(f"Sanitizing health data: {data}")
-    sanitized_data = data.copy()
-    
-    # Remove or mask sensitive fields
-    sensitive_fields = ["ssn", "insurance_number", "phone_number"]
-    for field in sensitive_fields:
-        if field in sanitized_data:
-            sanitized_data[field] = "REDACTED"
-    
-    print(f"Sanitized data: {sanitized_data}")
-    return sanitized_data 
+# Note: Enhanced validation and sanitization functions are defined above

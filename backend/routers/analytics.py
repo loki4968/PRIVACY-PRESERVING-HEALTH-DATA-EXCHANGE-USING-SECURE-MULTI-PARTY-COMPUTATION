@@ -3,9 +3,12 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 import statistics
 from typing import List, Dict, Any
-from backend.models import Upload, Organization
-from backend.dependencies import get_current_user, get_db
+from models import Upload, Organization
+from dependencies import get_current_user, get_db
 import json
+from services.mental_health_analytics import MentalHealthAnalytics
+from services.laboratory_analytics import LaboratoryAnalytics
+from services.vital_signs_analytics import VitalSignsAnalytics
 
 router = APIRouter()
 
@@ -163,4 +166,180 @@ def aggregate_health_metrics(user_id: int, db: Session) -> Dict[str, Any]:
             "blood_sugar": {"count": 0, "raw_values": []},
             "blood_pressure": {"count": 0, "raw_values": []},
             "heart_rate": {"count": 0, "raw_values": []}
-        } 
+        }
+
+# ----------------------- Mental Health Analytics ----------------------- #
+@router.post("/mental-health/phq9")
+async def analyze_phq9(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        responses = payload.get("responses", [])
+        service = MentalHealthAnalytics()
+        return service.score_phq9(responses)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"PHQ-9 analysis failed: {str(e)}")
+
+
+@router.post("/mental-health/gad7")
+async def analyze_gad7(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        responses = payload.get("responses", [])
+        service = MentalHealthAnalytics()
+        return service.score_gad7(responses)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"GAD-7 analysis failed: {str(e)}")
+
+
+@router.post("/mental-health/suicide-risk")
+async def suicide_risk(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        phq9_responses = payload.get("phq9_responses", [])
+        risk_flags = payload.get("risk_flags", {})
+        service = MentalHealthAnalytics()
+        return service.suicide_risk_screen(phq9_responses, risk_flags)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Suicide risk screening failed: {str(e)}")
+
+
+@router.post("/mental-health/response")
+async def treatment_response(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        series = payload.get("series", [])
+        service = MentalHealthAnalytics()
+        return service.treatment_response(series)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Treatment response analysis failed: {str(e)}")
+
+
+# ------------------------- Laboratory Analytics ------------------------- #
+@router.post("/labs/cbc")
+async def analyze_cbc(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        cbc = payload.get("cbc", {})
+        service = LaboratoryAnalytics()
+        return service.analyze_cbc(cbc)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"CBC analysis failed: {str(e)}")
+
+
+@router.post("/labs/cmp")
+async def analyze_cmp(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        cmp_panel = payload.get("cmp", {})
+        service = LaboratoryAnalytics()
+        return service.analyze_cmp(cmp_panel)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"CMP analysis failed: {str(e)}")
+
+
+@router.post("/labs/markers")
+async def analyze_infection_markers(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        markers = payload.get("markers", {})
+        service = LaboratoryAnalytics()
+        return service.analyze_infection_markers(markers)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Marker analysis failed: {str(e)}")
+
+
+@router.post("/labs/summary")
+async def labs_summary(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        cbc = payload.get("cbc")
+        cmp_panel = payload.get("cmp")
+        markers = payload.get("markers")
+        service = LaboratoryAnalytics()
+        return service.summarize(cbc=cbc, cmp_panel=cmp_panel, markers=markers)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Lab summary failed: {str(e)}")
+
+
+# -------------------------- Vital Signs Analytics ----------------------- #
+@router.post("/vitals/temperature")
+async def vitals_temperature(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        series = payload.get("series", [])
+        service = VitalSignsAnalytics()
+        return service.analyze_temperature(series)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Temperature analysis failed: {str(e)}")
+
+
+@router.post("/vitals/sirs")
+async def vitals_sirs(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        vitals = payload.get("vitals", {})
+        service = VitalSignsAnalytics()
+        return service.evaluate_sirs(vitals)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"SIRS evaluation failed: {str(e)}")
+
+
+@router.post("/vitals/bmi")
+async def vitals_bmi(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        height_cm = payload.get("height_cm")
+        weight_kg = payload.get("weight_kg")
+        service = VitalSignsAnalytics()
+        return service.bmi(height_cm, weight_kg)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"BMI calculation failed: {str(e)}")
+
+
+@router.post("/vitals/bmi-trend")
+async def vitals_bmi_trend(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        height_cm = payload.get("height_cm")
+        weight_series = payload.get("weight_series", [])
+        service = VitalSignsAnalytics()
+        return service.bmi_trend(height_cm, weight_series)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"BMI trend failed: {str(e)}")
+
+
+@router.post("/vitals/summary")
+async def vitals_summary(
+    payload: Dict[str, Any],
+    current_user: dict = Depends(get_current_user),
+):
+    try:
+        series = payload.get("series", [])
+        service = VitalSignsAnalytics()
+        return service.summarize_vitals(series)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Vitals summary failed: {str(e)}")

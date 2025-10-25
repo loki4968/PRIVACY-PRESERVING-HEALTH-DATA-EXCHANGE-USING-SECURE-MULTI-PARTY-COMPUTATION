@@ -6,6 +6,9 @@ import { Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { CustomButton } from '../components/ui/custom-button';
 
+// Get API base URL from environment or use default
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -16,7 +19,8 @@ export default function ForgotPasswordPage() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/forgot-password', {
+      // Send OTP to email instead of reset link
+      const response = await fetch(`${API_BASE_URL}/send-otp`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -26,11 +30,12 @@ export default function ForgotPasswordPage() {
 
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.detail || 'Failed to send reset email');
+        throw new Error(error.detail || 'Failed to send verification code');
       }
 
-      toast.success('Password reset email sent. Please check your inbox.');
-      router.push('/login');
+      toast.success('Verification code sent to your email');
+      // Redirect to OTP verification page with email
+      router.push(`/reset-password-otp?email=${encodeURIComponent(email)}`);
     } catch (error) {
       toast.error(error.message);
     } finally {
@@ -46,7 +51,7 @@ export default function ForgotPasswordPage() {
             Forgot your password?
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Enter your email address and we'll send you a link to reset your password.
+            Enter your email address and we'll send you a verification code to reset your password.
           </p>
         </div>
         
@@ -89,7 +94,7 @@ export default function ForgotPasswordPage() {
                   Sending...
                 </>
               ) : (
-                'Send Reset Link'
+                'Send Verification Code'
               )}
             </CustomButton>
           </div>
@@ -107,4 +112,4 @@ export default function ForgotPasswordPage() {
       </div>
     </div>
   );
-} 
+}

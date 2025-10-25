@@ -1,8 +1,8 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from backend.auth_utils import decode_access_token, Permission, UserRole
+from auth_utils import decode_access_token, Permission, UserRole
 from typing import List, Optional
-from backend.models import SessionLocal
+from models import SessionLocal
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 

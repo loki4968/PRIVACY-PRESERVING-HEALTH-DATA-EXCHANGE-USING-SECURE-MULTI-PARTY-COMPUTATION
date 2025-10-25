@@ -3,6 +3,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'react-hot-toast';
+import { API_ENDPOINTS } from '../config/api.js';
 
 const AuthContext = createContext({});
 
@@ -23,7 +24,7 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      const response = await fetch('http://localhost:8000/me', {
+      const response = await fetch(API_ENDPOINTS.me, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -47,7 +48,7 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     try {
-      const response = await fetch('http://localhost:8000/login', {
+      const response = await fetch(API_ENDPOINTS.login, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -66,7 +67,7 @@ export function AuthProvider({ children }) {
       localStorage.setItem('token', token);
 
       // Get user data
-      const userResponse = await fetch('http://localhost:8000/me', {
+      const userResponse = await fetch(API_ENDPOINTS.me, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -102,7 +103,7 @@ export function AuthProvider({ children }) {
         throw new Error('No token found');
       }
 
-      const response = await fetch('http://localhost:8000/refresh', {
+      const response = await fetch(API_ENDPOINTS.refresh, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -146,4 +147,4 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}; 
+};
